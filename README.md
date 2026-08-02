@@ -2,6 +2,10 @@
 
 Landing page e catálogo técnico-comercial da Plasticauto, preparado para publicação no GitHub Pages.
 
+## Endereço público
+
+https://rsucupira.github.io/lp-plasticauto/
+
 ## Recursos implementados
 
 - página inicial responsiva;
@@ -24,4 +28,4 @@ Landing page e catálogo técnico-comercial da Plasticauto, preparado para publi
 
 ## Publicação
 
-O workflow `.github/workflows/deploy-pages.yml` publica o conteúdo após alterações na branch `main`. Caso seja a primeira publicação, abra **Settings → Pages** e selecione **GitHub Actions** como fonte.
+O workflow `.github/workflows/deploy-pages.yml` publica o conteúdo após alterações na branch `main`. Em **Settings → Pages**, a fonte deve estar configurada como **GitHub Actions**.
