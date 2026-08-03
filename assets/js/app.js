@@ -12,6 +12,33 @@ const unique = values => [...new Set(values)].sort((a,b) => a.localeCompare(b, '
 const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
 const whatsappUrl = message => `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(message)}`;
 
+function fallbackShape(product, detail = false){
+  return `<span class="product-shape ${productShapeClass(product.categoria)}" aria-hidden="true"></span>${detail ? '<span class="detail-note">Imagem ilustrativa. A foto oficial deste produto ainda não está disponível em arquivo independente.</span>' : ''}`;
+}
+
+function productImage(product, options = {}){
+  if(!product.imagem) return fallbackShape(product, options.detail);
+  const loading = options.loading || 'lazy';
+  const classes = options.className || 'product-image';
+  const dimensions = product.imagemLargura && product.imagemAltura ? ` width="${Number(product.imagemLargura)}" height="${Number(product.imagemAltura)}"` : '';
+  const priority = options.priority ? ' fetchpriority="high"' : '';
+  return `<img class="${classes}" src="${escapeHtml(product.imagem)}" alt="${escapeHtml(product.imagemAlt || product.nome)}" loading="${loading}" decoding="async"${dimensions}${priority} data-product-image data-product-id="${escapeHtml(product.id)}">`;
+}
+
+function setupImageFallbacks(){
+  document.addEventListener('error', event => {
+    const image = event.target;
+    if(!(image instanceof HTMLImageElement) || !image.matches('[data-product-image]') || image.dataset.fallbackApplied) return;
+    image.dataset.fallbackApplied = 'true';
+    const container = image.closest('[data-image-container]');
+    if(!container) return;
+    const category = container.dataset.category || 'diversos';
+    container.classList.remove('has-image');
+    image.remove();
+    container.insertAdjacentHTML('beforeend', `<span class="product-shape ${productShapeClass(category)}" aria-hidden="true"></span><span class="image-fallback-label">Imagem indisponível</span>`);
+  }, true);
+}
+
 function setupGlobalUi(){
   const toggle = document.querySelector('.menu-toggle');
   if(toggle){
@@ -39,9 +66,10 @@ function productShapeClass(category){
 
 function productCard(product){
   const warning = product.revisar ? '<span class="product-badge warning">Confirmar aplicação</span>' : `<span class="product-badge">${escapeHtml(product.marca)}</span>`;
+  const hasImage = Boolean(product.imagem);
   return `<article class="product-card">
     <a href="produto.html?id=${encodeURIComponent(product.id)}" aria-label="Ver ${escapeHtml(product.nome)}">
-      <div class="product-visual">${warning}<span class="product-shape ${productShapeClass(product.categoria)}" aria-hidden="true"></span></div>
+      <div class="product-visual ${hasImage ? 'has-image' : ''}" data-image-container data-category="${escapeHtml(product.categoria)}">${warning}${productImage(product)}</div>
       <div class="product-body">
         <span class="product-kicker">${escapeHtml(product.categoriaNome)}</span>
         <h3>${escapeHtml(product.nome)}</h3>
@@ -143,11 +171,25 @@ async function setupProductPage(){
     const products = await loadProducts(); const id = new URLSearchParams(location.search).get('id'); const product = products.find(p=>p.id===id);
     if(!product){ main.innerHTML='<section class="error-product"><h1>Produto não encontrado</h1><p>Volte ao catálogo e escolha outro item.</p><a class="btn btn-dark" href="index.html#catalogo">Ver catálogo</a></section>'; return; }
     document.title = `${product.nome} | Plasticauto`;
+    const description = `${product.nome} ${product.codigo} para ${product.marca} ${product.modelo}. Consulte aplicação e disponibilidade com a Plasticauto.`;
+    const descriptionMeta = document.querySelector('meta[name="description"]');
+    if(descriptionMeta) descriptionMeta.content = description;
+    if(product.imagem){
+      const ogImage = document.createElement('meta'); ogImage.setAttribute('property','og:image'); ogImage.content = product.imagem; document.head.appendChild(ogImage);
+    }
     const message = `Olá! Gostaria de informações sobre o produto ${product.codigo} — ${product.nome}. Meu veículo é ${product.marca} ${product.modelo}, ano _____. Poderiam confirmar a compatibilidade?`;
     const related = products.filter(p=>p.id!==product.id && (p.modelo===product.modelo || p.categoria===product.categoria)).slice(0,4);
-    main.innerHTML = `<section class="product-hero"><div class="container"><div class="breadcrumbs"><a href="index.html">Início</a> / <a href="index.html#catalogo">Catálogo</a> / ${escapeHtml(product.codigo)}</div><div class="product-detail-grid"><div class="detail-visual"><span class="detail-code">${escapeHtml(product.codigo)}</span><span class="product-shape ${productShapeClass(product.categoria)}"></span><span class="detail-note">Imagem ilustrativa do MVP. Substituir por fotografia oficial do produto.</span></div><div class="product-info"><span class="product-category-label">${escapeHtml(product.categoriaNome)}</span><h1 class="product-title">${escapeHtml(product.nome)}</h1><p class="product-lead">${escapeHtml(product.variacao)}. Consulte a aplicação antes da compra ou instalação.</p><div class="vehicle-box"><small>Compatibilidade cadastrada</small><strong>${escapeHtml(product.marca)} ${escapeHtml(product.modelo)}</strong><span>${escapeHtml(product.periodo)}</span></div><div class="detail-specs"><div><span>Código Plasticauto</span><strong>${escapeHtml(product.codigo)}</strong></div><div><span>Categoria</span><strong>${escapeHtml(product.categoriaNome)}</strong></div><div><span>Marca</span><strong>${escapeHtml(product.marca)}</strong></div><div><span>Modelo</span><strong>${escapeHtml(product.modelo)}</strong></div><div><span>Variação</span><strong>${escapeHtml(product.variacao)}</strong></div><div><span>Aplicação</span><strong>${escapeHtml(product.periodo)}</strong></div></div><div class="product-actions"><a class="btn btn-primary" href="${whatsappUrl(message)}" target="_blank" rel="noopener">Confirmar pelo WhatsApp <span>→</span></a><a class="btn btn-dark" href="mailto:contato@plasticauto.com.br?subject=${encodeURIComponent('Consulta '+product.codigo)}">Consultar por e-mail</a></div><p class="compatibility-note">A aplicação pode depender de versão, cabine, geração ou configuração do veículo. Confirme os dados antes de concluir o pedido.</p></div></div></div></section>${related.length?`<section class="related-section"><div class="container"><span class="eyebrow dark">Você também pode consultar</span><h2>Produtos relacionados</h2><div class="product-grid">${related.map(productCard).join('')}</div></div></section>`:''}`;
+    const gallery = Array.isArray(product.galeria) && product.galeria.length ? product.galeria : (product.imagem ? [product.imagem] : []);
+    const thumbnails = gallery.length > 1 ? `<div class="product-gallery" role="list" aria-label="Galeria de imagens">${gallery.map((src,index)=>`<button type="button" class="gallery-thumb${index===0?' active':''}" data-gallery-src="${escapeHtml(src)}" aria-label="Exibir imagem ${index+1} de ${gallery.length}" aria-pressed="${index===0}"><img src="${escapeHtml(src)}" alt="" loading="lazy"></button>`).join('')}</div>` : '';
+    main.innerHTML = `<section class="product-hero"><div class="container"><div class="breadcrumbs"><a href="index.html">Início</a> / <a href="index.html#catalogo">Catálogo</a> / ${escapeHtml(product.codigo)}</div><div class="product-detail-grid"><div><div class="detail-visual ${product.imagem?'has-image':''}" data-image-container data-category="${escapeHtml(product.categoria)}"><span class="detail-code">${escapeHtml(product.codigo)}</span>${productImage(product,{detail:true,loading:'eager',priority:true,className:'detail-product-image'})}</div>${thumbnails}</div><div class="product-info"><span class="product-category-label">${escapeHtml(product.categoriaNome)}</span><h1 class="product-title">${escapeHtml(product.nome)}</h1><p class="product-lead">${escapeHtml(product.variacao)}. Consulte a aplicação antes da compra ou instalação.</p><div class="vehicle-box"><small>Compatibilidade cadastrada</small><strong>${escapeHtml(product.marca)} ${escapeHtml(product.modelo)}</strong><span>${escapeHtml(product.periodo)}</span></div><div class="detail-specs"><div><span>Código Plasticauto</span><strong>${escapeHtml(product.codigo)}</strong></div><div><span>Categoria</span><strong>${escapeHtml(product.categoriaNome)}</strong></div><div><span>Marca</span><strong>${escapeHtml(product.marca)}</strong></div><div><span>Modelo</span><strong>${escapeHtml(product.modelo)}</strong></div><div><span>Variação</span><strong>${escapeHtml(product.variacao)}</strong></div><div><span>Aplicação</span><strong>${escapeHtml(product.periodo)}</strong></div></div><div class="product-actions"><a class="btn btn-primary" href="${whatsappUrl(message)}" target="_blank" rel="noopener">Confirmar pelo WhatsApp <span>→</span></a><a class="btn btn-dark" href="mailto:contato@plasticauto.com.br?subject=${encodeURIComponent('Consulta '+product.codigo)}">Consultar por e-mail</a></div><p class="compatibility-note">A aplicação pode depender de versão, cabine, geração ou configuração do veículo. Confirme os dados antes de concluir o pedido.</p></div></div></div></section>${related.length?`<section class="related-section"><div class="container"><span class="eyebrow dark">Você também pode consultar</span><h2>Produtos relacionados</h2><div class="product-grid">${related.map(productCard).join('')}</div></div></section>`:''}`;
+    document.querySelectorAll('.gallery-thumb').forEach(button=>button.addEventListener('click',()=>{
+      const image = document.querySelector('.detail-product-image'); if(!image) return;
+      image.src = button.dataset.gallerySrc;
+      document.querySelectorAll('.gallery-thumb').forEach(item=>{ const active=item===button; item.classList.toggle('active',active); item.setAttribute('aria-pressed',String(active)); });
+    }));
+    const structured = document.createElement('script'); structured.type='application/ld+json'; structured.textContent=JSON.stringify({'@context':'https://schema.org','@type':'Product',name:product.nome,sku:product.codigo,brand:{'@type':'Brand',name:'Plasticauto'},description,image:product.imagem?[product.imagem]:undefined}); document.head.appendChild(structured);
     document.querySelectorAll('.whatsapp-link').forEach(link=>{link.href=whatsappUrl(message);link.target='_blank';link.rel='noopener'});
   }catch(error){ main.innerHTML=`<section class="error-product"><h1>Catálogo indisponível</h1><p>${escapeHtml(error.message)}</p></section>`; }
 }
 
-document.addEventListener('DOMContentLoaded', () => { setupGlobalUi(); setupCatalog(); setupResellerForm(); setupProductPage(); });
+document.addEventListener('DOMContentLoaded', () => { setupImageFallbacks(); setupGlobalUi(); setupCatalog(); setupResellerForm(); setupProductPage(); });
